@@ -5,6 +5,31 @@ green='\033[0;32m'
 yellow='\033[0;33m'
 plain='\033[0m'
 
+function parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --email)
+                email="$2"
+                shift
+                shift
+                ;;
+            --number)
+                docker_num="$2"
+                shift
+                shift
+                ;;
+            --debug-output)
+                set -x
+                shift
+                ;;
+            *)
+                error "Unknown argument: $1"
+                display_help
+                exit 1
+        esac
+    done
+}
+
 mk_swap() {
     #检查是否存在swapfile
     grep -q "swapfile" /etc/fstab
@@ -46,11 +71,21 @@ del_swap(){
 
 #检查docker程序是否存在不存在就安装
 install_docker() {
-    if [ ! -f "/usr/bin/docker" ]; then
-        read -p "Press enter to install docker" bcaucbau 
-        yum -y install docker
-        systemctl start docker
-        systemctl enable docker
+    if which docker >/dev/null; then
+        echo "Docker has been installed, skipped"
+    else
+        echo "Installing Docker..."
+        curl -fsSL https://get.docker.com -o get-docker.sh
+        sudo sh get-docker.sh
+        check_docker_version=$(docker version &>/dev/null; echo $?)
+        if [[ $check_docker_version -eq 0 ]]; then
+            echo "Docker installed successfully."
+        else
+            echo "Docker install failed."
+            exit 1
+        fi
+        systemctl enable docker || service docker start
+        rm get-docker.sh
     fi
 }
 
@@ -85,13 +120,13 @@ start_all_docker() {
 
 show_input() {
     #定义数据
-    read -p "Your Mail:" mail_add 
+    read -p "Your Mail:" email 
     read -p "Docker Num:" docker_num 
 
     clear
 
     #数据展示
-    echo "The email you entered:"$mail_add
+    echo "The email you entered:"$email
     echo "Docker Num:":$docker_num
 }
 
@@ -109,7 +144,7 @@ start_docker() {
     #循环启动docker
     for ((i=1;i<=$docker_num;i++))
     do
-        docker run -d --restart=on-failure luckysdream/p2pclient $mail_add
+        docker run -d --restart=on-failure -e DOCKER_ID=a$i -e email=$email luckysdream/p2pclient
     done
 }
 
@@ -154,4 +189,10 @@ show_menu() {
 }
 
 
-show_menu
+if [[ $# > 0 ]]; then
+    parse_args "$@"
+    one_install
+    start_docker
+else
+    show_menu
+fi
